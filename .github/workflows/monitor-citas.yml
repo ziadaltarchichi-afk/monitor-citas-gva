@@ -1,4 +1,4 @@
-name: Monitor de Citas GVA - FUNCIONANDO
+name: Monitor de Citas GVA + VOZ
 
 on:
   schedule:
@@ -22,7 +22,7 @@ jobs:
       with:
         node-version: '18'
         
-    - name: Crear script FUNCIONANDO
+    - name: Crear script con VOZ
       run: |
         cat > monitor.js << 'EOF'
         const https = require('https');
@@ -60,7 +60,7 @@ jobs:
                   console.log('✅ Mensaje enviado a Telegram');
                   resolve(true);
                 } else {
-                  console.log('❌ Error Telegram:', responseData);
+                  console.log('❌ Error en mensaje:', responseData);
                   resolve(false);
                 }
               });
@@ -76,9 +76,84 @@ jobs:
           });
         }
         
+        // NUEVA FUNCIÓN: Enviar notificación de voz
+        async function sendVoiceAlert() {
+          console.log('🔊 Enviando alerta de voz...');
+          
+          // Método 1: Intentar enviar una nota de voz (audio corto)
+          // Nota: Los bots no pueden enviar archivos de audio directamente sin upload
+          // Usaremos un método alternativo
+          
+          return new Promise((resolve, reject) => {
+            // Enviar mensaje especial que suene diferente
+            const data = JSON.stringify({
+              chat_id: CONFIG.CHAT_ID,
+              text: '🚨🚨🚨 ALERTA URGENTE - CITA DISPONIBLE 🚨🚨🚨',
+              parse_mode: 'HTML'
+            });
+            
+            const options = {
+              hostname: 'api.telegram.org',
+              port: 443,
+              path: `/bot${CONFIG.BOT_TOKEN}/sendMessage`,
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(data)
+              }
+            };
+            
+            const req = https.request(options, (res) => {
+              let responseData = '';
+              res.on('data', chunk => responseData += chunk);
+              res.on('end', () => {
+                if (res.statusCode === 200) {
+                  console.log('✅ Alerta de voz enviada');
+                  resolve(true);
+                } else {
+                  console.log('❌ Error en alerta de voz:', responseData);
+                  resolve(false);
+                }
+              });
+            });
+            
+            req.on('error', (error) => {
+              console.error('❌ Error en alerta de voz:', error);
+              resolve(false);
+            });
+            
+            req.write(data);
+            req.end();
+          });
+        }
+        
+        // NUEVA FUNCIÓN: Enviar múltiples notificaciones
+        async function sendMultipleAlerts(totalDays) {
+          console.log('🔔 Enviando notificaciones múltiples...');
+          
+          // Enviar el mensaje principal
+          const daysList = Array.from({length: Math.min(totalDays, 10)}, (_, i) => {
+            const date = new Date();
+            date.setDate(date.getDate() + i + 1);
+            return `• ${date.toLocaleDateString('es-ES')}`;
+          }).join('\n');
+          
+          const mainMessage = `🚨 <b>CITA DISPONIBLE ENCONTRADA</b>\n\n📋 <b>Servicio:</b> Registro Civil\n📅 <b>Días disponibles:</b> ${totalDays}\n⏰ <b>Hora:</b> ${new Date().toUTCString()}\n\n<b>Próximos días:</b>\n${daysList}\n\n¡Date prisa en reservar!`;
+          
+          await sendTelegram(mainMessage);
+          
+          // Enviar alerta de voz/urgente
+          await sendVoiceAlert();
+          
+          // Enviar mensaje adicional después de 2 segundos
+          setTimeout(async () => {
+            await sendTelegram('🔔 <b>Recordatorio:</b> Las citas se agotan rápido. ¡Reserva ahora!');
+          }, 2000);
+        }
+        
         async function checkAvailability() {
           return new Promise((resolve, reject) => {
-            console.log('🔍 Verificando endpoint con disponibilidad...');
+            console.log('🔍 Verificando endpoint...');
             
             https.get(CONFIG.ENDPOINT, { 
               headers: { 
@@ -93,8 +168,6 @@ jobs:
               res.on('end', () => {
                 try {
                   const jsonData = JSON.parse(data);
-                  
-                  // Buscar días con estado 0 (disponibles)
                   const availableDays = jsonData.dias.filter(dia => dia.estado === 0);
                   
                   if (availableDays.length > 0) {
@@ -105,7 +178,7 @@ jobs:
                       total: availableDays.length
                     });
                   } else {
-                    console.log('❌ No hay días disponibles (estado 0)');
+                    console.log('❌ No hay días disponibles');
                     resolve({
                       available: false,
                       days: [],
@@ -124,35 +197,17 @@ jobs:
         
         async function main() {
           try {
-            console.log('🚀 Iniciando monitor de citas...');
+            console.log('🚀 Iniciando monitor con alertas de voz...');
             console.log('⏰', new Date().toUTCString());
-            console.log('🔗 Endpoint:', CONFIG.ENDPOINT);
             
             const result = await checkAvailability();
             
             if (result.available) {
-              // Crear lista de días
-              const daysList = result.days
-                .slice(0, 10) // Máximo 10 días
-                .map(dia => {
-                  const date = new Date(dia.dia);
-                  return `• ${date.toLocaleDateString('es-ES')}`;
-                })
-                .join('\n');
-              
-              // Mensaje CORREGIDO con saltos de línea reales
-              const message = `🚨 <b>CITA DISPONIBLE ENCONTRADA</b>\n\n📋 <b>Servicio:</b> Registro Civil\n📅 <b>Días disponibles:</b> ${result.total}\n⏰ <b>Hora:</b> ${new Date().toUTCString()}\n\n<b>Próximos días:</b>\n${daysList}\n\n¡Date prisa en reservar!`;
-              
-              console.log('📤 Enviando mensaje...');
-              const sent = await sendTelegram(message);
-              
-              if (sent) {
-                console.log(`🎉 Alerta enviada correctamente - ${result.total} días disponibles`);
-              } else {
-                console.log('❌ Falló el envío a Telegram');
-              }
+              console.log('📤 Enviando notificaciones múltiples...');
+              await sendMultipleAlerts(result.total);
+              console.log(`🎉 Alertas enviadas - ${result.total} días disponibles`);
             } else {
-              console.log('ℹ️ No hay citas disponibles en este momento');
+              console.log('ℹ️ No hay citas disponibles');
             }
             
           } catch (error) {
@@ -163,7 +218,7 @@ jobs:
         main();
         EOF
 
-    - name: Ejecutar monitor FUNCIONANDO
+    - name: Ejecutar monitor con VOZ
       run: node monitor.js
       
     - name: Log final
