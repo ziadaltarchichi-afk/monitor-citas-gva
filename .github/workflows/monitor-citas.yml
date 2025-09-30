@@ -1,4 +1,4 @@
-name: Monitor de Citas GVA
+name: Monitor de Citas GVA - CORREGIDO
 
 on:
   schedule:
@@ -22,7 +22,7 @@ jobs:
       with:
         node-version: '18'
         
-    - name: Crear script de monitorización
+    - name: Crear script CORREGIDO
       run: |
         cat > monitor.js << 'EOF'
         const https = require('https');
@@ -30,8 +30,7 @@ jobs:
         const CONFIG = {
           BOT_TOKEN: process.env.BOT_TOKEN,
           CHAT_ID: process.env.CHAT_ID,
-          ENDPOINT: 'https://sige.gva.es/qsige.localizador/citaPrevia/disponible/centro/79/servicio/284/calendario',
-          CHECK_INTERVAL: 5 * 60 * 1000
+          ENDPOINT: 'https://sige.gva.es/qsige.localizador/citaPrevia/disponible/centro/82/servicio/265/calendario'
         };
         
         async function sendTelegram(message) {
@@ -57,8 +56,13 @@ jobs:
               let responseData = '';
               res.on('data', chunk => responseData += chunk);
               res.on('end', () => {
-                console.log('✅ Mensaje enviado a Telegram');
-                resolve(true);
+                if (res.statusCode === 200) {
+                  console.log('✅ Mensaje enviado a Telegram');
+                  resolve(true);
+                } else {
+                  console.log('❌ Error Telegram:', responseData);
+                  resolve(false);
+                }
               });
             });
         
@@ -127,15 +131,17 @@ jobs:
             const result = await checkAvailability();
             
             if (result.available) {
+              // FORMATO CORREGIDO: usar \n en lugar de %0A
               const daysList = result.days
                 .slice(0, 10)
                 .map(dia => {
                   const date = new Date(dia.dia);
                   return `• ${date.toLocaleDateString('es-ES')}`;
                 })
-                .join('%0A');
+                .join('\n');
               
-              const message = `🚨 <b>CITA DISPONIBLE ENCONTRADA</b>%0A%0A📋 <b>Servicio:</b> Registro Civil Torrevieja%0A📅 <b>Días disponibles:</b> ${result.total}%0A🔗 <b>Endpoint:</b> ${CONFIG.ENDPOINT}%0A⏰ <b>Hora:</b> ${new Date().toUTCString()}%0A%0A<b>Próximos días:</b>%0A${daysList}%0A%0A¡Date prisa en reservar!`;
+              // MENSAJE CORREGIDO: saltos de línea reales
+              const message = `🚨 <b>CITA DISPONIBLE ENCONTRADA</b>\n\n📋 <b>Servicio:</b> Registro Civil Torrevieja\n📅 <b>Días disponibles:</b> ${result.total}\n🔗 <b>Endpoint:</b> ${CONFIG.ENDPOINT}\n⏰ <b>Hora:</b> ${new Date().toUTCString()}\n\n<b>Próximos días:</b>\n${daysList}\n\n¡Date prisa en reservar!`;
               
               await sendTelegram(message);
               console.log(`🎉 Alerta enviada - ${result.total} días disponibles`);
@@ -145,18 +151,14 @@ jobs:
             
           } catch (error) {
             console.error('❌ Error en el monitor:', error.message);
-            
-            if (error.message.includes('Timeout') || error.message.includes('conexión')) {
-              await sendTelegram(`⚠️ <b>Error en el monitor</b>%0A%0A${error.message}%0A⏰ ${new Date().toUTCString()}`);
-            }
           }
         }
         
         main().catch(console.error);
         EOF
 
-    - name: Ejecutar monitor
+    - name: Ejecutar monitor CORREGIDO
       run: node monitor.js
       
     - name: Log final
-      run: echo "✅ Proceso completado - $(date -u)"
+      run: echo "✅ Monitor completado - $(date -u)"
