@@ -1,4 +1,4 @@
-name: Monitor de Citas GVA - CORREGIDO
+name: Monitor de Citas GVA - FUNCIONANDO
 
 on:
   schedule:
@@ -22,7 +22,7 @@ jobs:
       with:
         node-version: '18'
         
-    - name: Crear script CORREGIDO
+    - name: Crear script FUNCIONANDO
       run: |
         cat > monitor.js << 'EOF'
         const https = require('https');
@@ -34,24 +34,24 @@ jobs:
         };
         
         async function sendTelegram(message) {
-          const data = JSON.stringify({
-            chat_id: CONFIG.CHAT_ID,
-            text: message,
-            parse_mode: 'HTML'
-          });
-        
-          const options = {
-            hostname: 'api.telegram.org',
-            port: 443,
-            path: `/bot${CONFIG.BOT_TOKEN}/sendMessage`,
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Content-Length': data.length
-            }
-          };
-        
           return new Promise((resolve, reject) => {
+            const data = JSON.stringify({
+              chat_id: CONFIG.CHAT_ID,
+              text: message,
+              parse_mode: 'HTML'
+            });
+        
+            const options = {
+              hostname: 'api.telegram.org',
+              port: 443,
+              path: `/bot${CONFIG.BOT_TOKEN}/sendMessage`,
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(data)
+              }
+            };
+        
             const req = https.request(options, (res) => {
               let responseData = '';
               res.on('data', chunk => responseData += chunk);
@@ -67,8 +67,8 @@ jobs:
             });
         
             req.on('error', (error) => {
-              console.error('❌ Error enviando a Telegram:', error);
-              reject(error);
+              console.error('❌ Error de conexión:', error);
+              resolve(false);
             });
             
             req.write(data);
@@ -78,11 +78,11 @@ jobs:
         
         async function checkAvailability() {
           return new Promise((resolve, reject) => {
-            console.log('🔍 Verificando endpoint...');
+            console.log('🔍 Verificando endpoint con disponibilidad...');
             
             https.get(CONFIG.ENDPOINT, { 
               headers: { 
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'User-Agent': 'Mozilla/5.0',
                 'Accept': 'application/json'
               },
               timeout: 10000
@@ -94,6 +94,7 @@ jobs:
                 try {
                   const jsonData = JSON.parse(data);
                   
+                  // Buscar días con estado 0 (disponibles)
                   const availableDays = jsonData.dias.filter(dia => dia.estado === 0);
                   
                   if (availableDays.length > 0) {
@@ -104,7 +105,7 @@ jobs:
                       total: availableDays.length
                     });
                   } else {
-                    console.log('❌ No hay días disponibles');
+                    console.log('❌ No hay días disponibles (estado 0)');
                     resolve({
                       available: false,
                       days: [],
@@ -117,8 +118,6 @@ jobs:
               });
             }).on('error', (error) => {
               reject(new Error(`Error de conexión: ${error.message}`));
-            }).on('timeout', () => {
-              reject(new Error('Timeout en la conexión'));
             });
           });
         }
@@ -126,27 +125,34 @@ jobs:
         async function main() {
           try {
             console.log('🚀 Iniciando monitor de citas...');
-            console.log(`⏰ ${new Date().toUTCString()}`);
+            console.log('⏰', new Date().toUTCString());
+            console.log('🔗 Endpoint:', CONFIG.ENDPOINT);
             
             const result = await checkAvailability();
             
             if (result.available) {
-              // FORMATO CORREGIDO: usar \n en lugar de %0A
+              // Crear lista de días
               const daysList = result.days
-                .slice(0, 10)
+                .slice(0, 10) // Máximo 10 días
                 .map(dia => {
                   const date = new Date(dia.dia);
                   return `• ${date.toLocaleDateString('es-ES')}`;
                 })
                 .join('\n');
               
-              // MENSAJE CORREGIDO: saltos de línea reales
-              const message = `🚨 <b>CITA DISPONIBLE ENCONTRADA</b>\n\n📋 <b>Servicio:</b> Registro Civil Torrevieja\n📅 <b>Días disponibles:</b> ${result.total}\n🔗 <b>Endpoint:</b> ${CONFIG.ENDPOINT}\n⏰ <b>Hora:</b> ${new Date().toUTCString()}\n\n<b>Próximos días:</b>\n${daysList}\n\n¡Date prisa en reservar!`;
+              // Mensaje CORREGIDO con saltos de línea reales
+              const message = `🚨 <b>CITA DISPONIBLE ENCONTRADA</b>\n\n📋 <b>Servicio:</b> Registro Civil\n📅 <b>Días disponibles:</b> ${result.total}\n⏰ <b>Hora:</b> ${new Date().toUTCString()}\n\n<b>Próximos días:</b>\n${daysList}\n\n¡Date prisa en reservar!`;
               
-              await sendTelegram(message);
-              console.log(`🎉 Alerta enviada - ${result.total} días disponibles`);
+              console.log('📤 Enviando mensaje...');
+              const sent = await sendTelegram(message);
+              
+              if (sent) {
+                console.log(`🎉 Alerta enviada correctamente - ${result.total} días disponibles`);
+              } else {
+                console.log('❌ Falló el envío a Telegram');
+              }
             } else {
-              console.log('ℹ️ No hay citas disponibles');
+              console.log('ℹ️ No hay citas disponibles en este momento');
             }
             
           } catch (error) {
@@ -154,11 +160,11 @@ jobs:
           }
         }
         
-        main().catch(console.error);
+        main();
         EOF
 
-    - name: Ejecutar monitor CORREGIDO
+    - name: Ejecutar monitor FUNCIONANDO
       run: node monitor.js
       
     - name: Log final
-      run: echo "✅ Monitor completado - $(date -u)"
+      run: echo "✅ Proceso completado - $(date -u)"
