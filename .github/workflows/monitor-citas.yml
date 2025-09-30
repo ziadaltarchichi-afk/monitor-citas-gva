@@ -30,7 +30,7 @@ jobs:
         const CONFIG = {
           BOT_TOKEN: process.env.BOT_TOKEN,
           CHAT_ID: process.env.CHAT_ID,
-          ENDPOINT: 'https://sige.gva.es/qsige.localizador/citaPrevia/disponible/centro/82/servicio/265/calendario',
+          ENDPOINT: 'https://sige.gva.es/qsige.localizador/citaPrevia/disponible/centro/79/servicio/284/calendario',
           CHECK_INTERVAL: 5 * 60 * 1000
         };
         
