@@ -1,0 +1,162 @@
+name: Monitor de Citas GVA
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+env:
+  BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout código
+      uses: actions/checkout@v4
+      
+    - name: Configurar Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Crear script de monitorización
+      run: |
+        cat > monitor.js << 'EOF'
+        const https = require('https');
+        
+        const CONFIG = {
+          BOT_TOKEN: process.env.BOT_TOKEN,
+          CHAT_ID: process.env.CHAT_ID,
+          ENDPOINT: 'https://sige.gva.es/qsige.localizador/citaPrevia/disponible/centro/82/servicio/265/calendario',
+          CHECK_INTERVAL: 5 * 60 * 1000
+        };
+        
+        async function sendTelegram(message) {
+          const data = JSON.stringify({
+            chat_id: CONFIG.CHAT_ID,
+            text: message,
+            parse_mode: 'HTML'
+          });
+        
+          const options = {
+            hostname: 'api.telegram.org',
+            port: 443,
+            path: `/bot${CONFIG.BOT_TOKEN}/sendMessage`,
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Content-Length': data.length
+            }
+          };
+        
+          return new Promise((resolve, reject) => {
+            const req = https.request(options, (res) => {
+              let responseData = '';
+              res.on('data', chunk => responseData += chunk);
+              res.on('end', () => {
+                console.log('✅ Mensaje enviado a Telegram');
+                resolve(true);
+              });
+            });
+        
+            req.on('error', (error) => {
+              console.error('❌ Error enviando a Telegram:', error);
+              reject(error);
+            });
+            
+            req.write(data);
+            req.end();
+          });
+        }
+        
+        async function checkAvailability() {
+          return new Promise((resolve, reject) => {
+            console.log('🔍 Verificando endpoint...');
+            
+            https.get(CONFIG.ENDPOINT, { 
+              headers: { 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json'
+              },
+              timeout: 10000
+            }, (res) => {
+              let data = '';
+              
+              res.on('data', chunk => data += chunk);
+              res.on('end', () => {
+                try {
+                  const jsonData = JSON.parse(data);
+                  
+                  const availableDays = jsonData.dias.filter(dia => dia.estado === 0);
+                  
+                  if (availableDays.length > 0) {
+                    console.log(`✅ Encontrados ${availableDays.length} días disponibles`);
+                    resolve({
+                      available: true,
+                      days: availableDays,
+                      total: availableDays.length
+                    });
+                  } else {
+                    console.log('❌ No hay días disponibles');
+                    resolve({
+                      available: false,
+                      days: [],
+                      total: 0
+                    });
+                  }
+                } catch (error) {
+                  reject(new Error(`Error parseando JSON: ${error.message}`));
+                }
+              });
+            }).on('error', (error) => {
+              reject(new Error(`Error de conexión: ${error.message}`));
+            }).on('timeout', () => {
+              reject(new Error('Timeout en la conexión'));
+            });
+          });
+        }
+        
+        async function main() {
+          try {
+            console.log('🚀 Iniciando monitor de citas...');
+            console.log(`⏰ ${new Date().toUTCString()}`);
+            
+            const result = await checkAvailability();
+            
+            if (result.available) {
+              const daysList = result.days
+                .slice(0, 10)
+                .map(dia => {
+                  const date = new Date(dia.dia);
+                  return `• ${date.toLocaleDateString('es-ES')}`;
+                })
+                .join('%0A');
+              
+              const message = `🚨 <b>CITA DISPONIBLE ENCONTRADA</b>%0A%0A📋 <b>Servicio:</b> Registro Civil Torrevieja%0A📅 <b>Días disponibles:</b> ${result.total}%0A🔗 <b>Endpoint:</b> ${CONFIG.ENDPOINT}%0A⏰ <b>Hora:</b> ${new Date().toUTCString()}%0A%0A<b>Próximos días:</b>%0A${daysList}%0A%0A¡Date prisa en reservar!`;
+              
+              await sendTelegram(message);
+              console.log(`🎉 Alerta enviada - ${result.total} días disponibles`);
+            } else {
+              console.log('ℹ️ No hay citas disponibles');
+            }
+            
+          } catch (error) {
+            console.error('❌ Error en el monitor:', error.message);
+            
+            if (error.message.includes('Timeout') || error.message.includes('conexión')) {
+              await sendTelegram(`⚠️ <b>Error en el monitor</b>%0A%0A${error.message}%0A⏰ ${new Date().toUTCString()}`);
+            }
+          }
+        }
+        
+        main().catch(console.error);
+        EOF
+
+    - name: Ejecutar monitor
+      run: node monitor.js
+      
+    - name: Log final
+      run: echo "✅ Proceso completado - $(date -u)"
