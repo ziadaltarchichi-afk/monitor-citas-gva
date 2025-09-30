@@ -1,0 +1,74 @@
+name: DEBUG Telegram
+
+on:
+  workflow_dispatch:
+
+env:
+  BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+jobs:
+  debug-telegram:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Probar diferentes métodos de envío
+      run: |
+        echo "🔍 BOT_TOKEN: ${BOT_TOKEN:0:10}..."  # Mostrar solo primeros 10 chars por seguridad
+        echo "🔍 CHAT_ID: $CHAT_ID"
+        echo ""
+        
+        # MÉTODO 1: Con curl directamente
+        echo "1. 🔄 Probando con curl..."
+        response1=$(curl -s -w "|%{http_code}" "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
+          -d chat_id="$CHAT_ID" \
+          -d text="✅ TEST 1 desde GitHub - $(date +%H:%M:%S)" \
+          -d parse_mode="HTML")
+        
+        http_code1=$(echo "$response1" | cut -d'|' -f2)
+        echo "   Código HTTP: $http_code1"
+        
+        # MÉTODO 2: Con JSON
+        echo ""
+        echo "2. 🔄 Probando con JSON..."
+        response2=$(curl -s -w "|%{http_code}" -X POST \
+          "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
+          -H "Content-Type: application/json" \
+          -d "{\"chat_id\":\"$CHAT_ID\",\"text\":\"✅ TEST 2 desde GitHub - $(date +%H:%M:%S)\",\"parse_mode\":\"HTML\"}")
+        
+        http_code2=$(echo "$response2" | cut -d'|' -f2)
+        echo "   Código HTTP: $http_code2"
+        
+        # MÉTODO 3: URL encode
+        echo ""
+        echo "3. 🔄 Probando con URL encode..."
+        message="✅ TEST 3 desde GitHub - $(date +%H:%M:%S)"
+        encoded_message=$(echo "$message" | sed 's/ /%20/g')
+        
+        response3=$(curl -s -w "|%{http_code}" \
+          "https://api.telegram.org/bot$BOT_TOKEN/sendMessage?chat_id=$CHAT_ID&text=$encoded_message&parse_mode=HTML")
+        
+        http_code3=$(echo "$response3" | cut -d'|' -f2)
+        echo "   Código HTTP: $http_code3"
+        
+        # VERIFICAR RESULTADOS
+        echo ""
+        echo "📊 RESULTADOS:"
+        if [ "$http_code1" = "200" ] || [ "$http_code2" = "200" ] || [ "$http_code3" = "200" ]; then
+          echo "✅ AL MENOS UN MÉTODO FUNCIONA"
+          echo "🎯 Revisa Telegram - deberías tener 3 mensajes de prueba"
+        else
+          echo "❌ NINGÚN MÉTODO FUNCIONA"
+          echo "🔍 Posibles problemas:"
+          echo "   - Token incorrecto"
+          echo "   - Chat ID incorrecto" 
+          echo "   - Bot bloqueado"
+          echo "   - Problemas de red de GitHub"
+        fi
+        
+        # MOSTRAR RESPUESTAS COMPLETAS (sin token)
+        echo ""
+        echo "📡 Respuestas completas:"
+        echo "Método 1: ${response1//$BOT_TOKEN/***}"
+        echo "Método 2: ${response2//$BOT_TOKEN/***}"
+        echo "Método 3: ${response3//$BOT_TOKEN/***}"
