@@ -1,0 +1,37 @@
+name: TEST Super Simple
+
+on:
+  workflow_dispatch:
+
+env:
+  BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Test directo con curl
+      run: |
+        echo "🔍 Token: ${BOT_TOKEN:0:15}..."
+        echo "🔍 Chat ID: $CHAT_ID"
+        echo ""
+        
+        # Mensaje MUY simple
+        response=$(curl -s -X POST \
+          "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
+          -H "Content-Type: application/json" \
+          -d "{\"chat_id\":\"$CHAT_ID\",\"text\":\"TEST SUPER SIMPLE - $(date)\",\"parse_mode\":\"HTML\"}" \
+          -w "|%{http_code}")
+        
+        echo "📡 Respuesta completa: $response"
+        
+        # Extraer código HTTP
+        http_code=$(echo "$response" | rev | cut -d'|' -f1 | rev)
+        echo "🔢 Código HTTP: $http_code"
+        
+        if [ "$http_code" = "200" ]; then
+          echo "✅ ÉXITO - Deberías recibir el mensaje en Telegram"
+        else
+          echo "❌ FALLO - Revisa la respuesta arriba"
+        fi
